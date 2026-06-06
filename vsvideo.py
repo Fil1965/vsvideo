@@ -832,6 +832,29 @@ def main():
             print(f"  - Archivo: '{os.path.basename(f)}'")
             print(f"    Ruta:    '{f}'")
             print(f"    Buscado: '{clean_title}'" + (f" ({year})" if year else ""))
+        
+        # Write to failed_files.txt
+        failed_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "failed_files.txt")
+        try:
+            with open(failed_txt_path, "w", encoding="utf-8") as txt_file:
+                txt_file.write(f"=== Películas no resueltas ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ===\n\n")
+                for f in failed_files:
+                    clean_title, year = parse_movie_filename(f)
+                    txt_file.write(f"Archivo: {os.path.basename(f)}\n")
+                    txt_file.write(f"Ruta:    {f}\n")
+                    txt_file.write(f"Buscado: {clean_title}" + (f" ({year})" if year else "") + "\n")
+                    txt_file.write("-" * 60 + "\n")
+            print(f"\n[INFO] Se ha generado el archivo '{os.path.basename(failed_txt_path)}' con el listado de fallos.")
+        except Exception as e:
+            print(f"[ERROR] No se pudo escribir '{failed_txt_path}': {e}")
+    else:
+        # Clear old failed_files.txt if it exists to avoid confusion
+        failed_txt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "failed_files.txt")
+        if os.path.exists(failed_txt_path):
+            try:
+                os.remove(failed_txt_path)
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()

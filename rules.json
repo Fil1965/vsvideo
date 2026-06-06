@@ -14,11 +14,8 @@
     "www newpct1 com"
   ],
   "ignored_folders": [
-    "extras",
-    "samples",
-    "trailers",
-    "subtitles",
     "\\\\192.168.1.2\\video\\0_0 Captura",
-    "\\\\192.168.1.2\\video\\0_1 VideosPersonales"
+    "\\\\192.168.1.2\\video\\0_1 VideosPersonales",
+    "\\\\192.168.1.2\\video\\0_2 Series"
   ]
 }
