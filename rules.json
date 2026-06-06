@@ -12,5 +12,11 @@
     "[wWw.EliteTorrent.BiZ]",
     "M1080",
     "www newpct1 com"
+  ],
+  "ignored_folders": [
+    "extras",
+    "samples",
+    "trailers",
+    "subtitles"
   ]
 }

@@ -69,16 +69,36 @@ def load_cleaner_rules():
     ]
     try:
         with open(rules_path, "w", encoding="utf-8") as f:
-            json.dump({"rules": default_rules}, f, indent=2, ensure_ascii=False)
+            json.dump({
+                "rules": default_rules,
+                "ignored_folders": ["extras", "samples", "trailers", "subtitles"]
+            }, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[ERROR] No se pudo crear '{rules_path}': {e}")
     return default_rules
 
+def load_ignored_folders():
+    rules_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rules.json")
+    default_ignored = ["extras", "samples", "trailers", "subtitles"]
+    if os.path.exists(rules_path):
+        try:
+            with open(rules_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("ignored_folders", default_ignored)
+        except Exception as e:
+            print(f"[ERROR] No se pudo leer '{rules_path}': {e}")
+    return default_ignored
+
 def save_cleaner_rules(rules):
     rules_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rules.json")
     try:
+        data = {}
+        if os.path.exists(rules_path):
+            with open(rules_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        data["rules"] = rules
         with open(rules_path, "w", encoding="utf-8") as f:
-            json.dump({"rules": rules}, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[ERROR] No se pudo guardar '{rules_path}': {e}")
 
@@ -690,7 +710,11 @@ def main():
                 vsmeta_files.append(target_path + ".vsmeta")
         else:
             if args.recursive:
-                for root, _, files in os.walk(target_path):
+                ignored_folders = load_ignored_folders()
+                ignored_lower = [f.lower() for f in ignored_folders]
+                for root, dirs, files in os.walk(target_path):
+                    # Prune ignored directories in-place so os.walk doesn't visit them
+                    dirs[:] = [d for d in dirs if d.lower() not in ignored_lower]
                     for file in files:
                         if file.lower().endswith(".vsmeta"):
                             vsmeta_files.append(os.path.join(root, file))
@@ -733,7 +757,11 @@ def main():
         # Directory mode
         print(f"[ESCANEO] Iniciando escaneo en: {target_path}")
         if args.recursive:
-            for root, _, files in os.walk(target_path):
+            ignored_folders = load_ignored_folders()
+            ignored_lower = [f.lower() for f in ignored_folders]
+            for root, dirs, files in os.walk(target_path):
+                # Prune ignored directories in-place so os.walk doesn't visit them
+                dirs[:] = [d for d in dirs if d.lower() not in ignored_lower]
                 for file in files:
                     if file.lower().endswith(VIDEO_EXTENSIONS):
                         video_files.append(os.path.join(root, file))
