@@ -25,7 +25,18 @@ El script analiza los nombres de tus archivos de video, deduce el título y el a
    .venv\Scripts\Activate.ps1
    ```
 
-El entorno virtual y las dependencias ya están instalados y configurados. El archivo `.env` ya contiene tu clave de API de TMDb.
+El entorno virtual y las dependencias ya están instalados y configurados.
+
+### Configuración de credenciales (`.env`)
+Dado que el archivo `.env` contiene información sensible (tu clave API), este se encuentra excluido del repositorio de Git. 
+
+Si clonas este proyecto en un nuevo equipo, deberás:
+1. Duplicar el archivo `.env.example` y renombrar la copia como `.env`.
+2. Abrir el archivo `.env` y rellenar tu clave API de TMDb en la variable `TMDB_API_KEY`:
+   ```ini
+   TMDB_API_KEY=tu_clave_de_tmdb_aqui
+   TMDB_LANGUAGE=es-ES
+   ```
 
 ## Uso del Script
 
