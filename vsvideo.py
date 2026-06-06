@@ -711,10 +711,24 @@ def main():
         else:
             if args.recursive:
                 ignored_folders = load_ignored_folders()
-                ignored_lower = [f.lower() for f in ignored_folders]
+                ignored_normalized = []
+                for f in ignored_folders:
+                    if '/' not in f and '\\' not in f:
+                        ignored_normalized.append(f.lower())
+                    else:
+                        ignored_normalized.append(os.path.normpath(os.path.abspath(f)).lower())
+                
                 for root, dirs, files in os.walk(target_path):
-                    # Prune ignored directories in-place so os.walk doesn't visit them
-                    dirs[:] = [d for d in dirs if d.lower() not in ignored_lower]
+                    pruned_dirs = []
+                    for d in dirs:
+                        if d.lower() in ignored_normalized:
+                            continue
+                        full_path = os.path.normpath(os.path.abspath(os.path.join(root, d))).lower()
+                        if full_path in ignored_normalized:
+                            continue
+                        pruned_dirs.append(d)
+                    dirs[:] = pruned_dirs
+                    
                     for file in files:
                         if file.lower().endswith(".vsmeta"):
                             vsmeta_files.append(os.path.join(root, file))
@@ -758,10 +772,24 @@ def main():
         print(f"[ESCANEO] Iniciando escaneo en: {target_path}")
         if args.recursive:
             ignored_folders = load_ignored_folders()
-            ignored_lower = [f.lower() for f in ignored_folders]
+            ignored_normalized = []
+            for f in ignored_folders:
+                if '/' not in f and '\\' not in f:
+                    ignored_normalized.append(f.lower())
+                else:
+                    ignored_normalized.append(os.path.normpath(os.path.abspath(f)).lower())
+            
             for root, dirs, files in os.walk(target_path):
-                # Prune ignored directories in-place so os.walk doesn't visit them
-                dirs[:] = [d for d in dirs if d.lower() not in ignored_lower]
+                pruned_dirs = []
+                for d in dirs:
+                    if d.lower() in ignored_normalized:
+                        continue
+                    full_path = os.path.normpath(os.path.abspath(os.path.join(root, d))).lower()
+                    if full_path in ignored_normalized:
+                        continue
+                    pruned_dirs.append(d)
+                dirs[:] = pruned_dirs
+                
                 for file in files:
                     if file.lower().endswith(VIDEO_EXTENSIONS):
                         video_files.append(os.path.join(root, file))
