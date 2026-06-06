@@ -1,0 +1,4 @@
+vsmetaEncoder==1.1.1
+requests>=2.31.0
+python-dotenv>=1.0.0
+pyreadline3>=3.5.4
