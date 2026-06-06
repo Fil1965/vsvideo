@@ -222,8 +222,11 @@ def parse_movie_filename(filepath):
     basename = os.path.basename(filepath)
     base_no_ext, _ = os.path.splitext(basename)
 
-    # 1. Try to find a 4-digit year (from 1900 to 2030)
-    year_match = re.search(r'\b(19\d{2}|20[0-2]\d|2030)\b', base_no_ext)
+    # Split camelCase (e.g. IronMan -> Iron Man, SpiderMan -> Spider Man)
+    base_no_ext = re.sub(r'([a-z])([A-Z])', r'\1 \2', base_no_ext)
+
+    # 1. Try to find a 4-digit year (from 1900 to 2030), supporting delimiters like underscores
+    year_match = re.search(r'(?:^|[\s._\-])(19\d{2}|20[0-2]\d|2030)(?:$|[\s._\-])', base_no_ext)
     year = year_match.group(1) if year_match else None
 
     # If year is found, extract title before the year
@@ -237,10 +240,14 @@ def parse_movie_filename(filepath):
     base_no_ext = re.sub(r'\[[^\]]*\]', '', base_no_ext)
     base_no_ext = re.sub(r'\([^\)]*\)', '', base_no_ext)
 
-    # 3. Replace dots, underscores, dashes, and brackets with spaces
+    # 3. Clean up common release quality / codec tags case-insensitively
+    junk_words = r'\b(4k(?:remux)?(?:\d+)?|2160p?|1080p?|720p?|remux|bluray|bdr|bdrip|brrip|dvdrip|hdrip|dvd|screener|scr|x264|h264|x265|hevc|xvid|ac3|aac|dts|5\.1|castellano|espanol|spanish|english|latino)\b'
+    base_no_ext = re.sub(junk_words, ' ', base_no_ext, flags=re.IGNORECASE)
+
+    # 4. Replace dots, underscores, dashes, and brackets with spaces
     base_no_ext = re.sub(r'[._\-]', ' ', base_no_ext)
 
-    # 4. Remove extra whitespaces
+    # 5. Remove extra whitespaces
     clean_title = ' '.join(base_no_ext.split()).strip()
 
     return clean_title, year
