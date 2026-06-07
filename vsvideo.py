@@ -127,16 +127,10 @@ def rename_physical_files(old_filepath, new_basename, verbose=False):
     
     # Handle name collisions
     if os.path.exists(new_filepath) and new_filepath.lower() != old_filepath.lower():
-        base_no_ext, _ = os.path.splitext(new_basename)
-        counter = 1
-        while True:
-            candidate_name = f"{base_no_ext}_{counter}{ext}"
-            candidate_path = os.path.join(old_dir, candidate_name)
-            if not os.path.exists(candidate_path):
-                new_filepath = candidate_path
-                new_basename = candidate_name
-                break
-            counter += 1
+        print(f"  [AVISO] No se renombró el archivo físico para evitar colisión con uno existente:")
+        print(f"    Existente: '{new_basename}'")
+        print(f"    Conservado original: '{old_basename}'")
+        return old_filepath
             
     if new_filepath.lower() != old_filepath.lower():
         print(f"  [RENOMBRADO] Renombrando archivo físico:")
@@ -251,6 +245,25 @@ def parse_movie_filename(filepath):
     clean_title = ' '.join(base_no_ext.split()).strip()
 
     return clean_title, year
+
+
+def extract_tmdb_id(url_or_id):
+    """
+    Extracts the TMDB movie ID from a TMDB URL or a raw ID string.
+    Supports formats like:
+      - 8077
+      - https://www.themoviedb.org/movie/8077-alien
+      - /movie/8077
+    """
+    if not url_or_id:
+        return None
+    url_or_id = str(url_or_id).strip()
+    if url_or_id.isdigit():
+        return int(url_or_id)
+    match = re.search(r'/movie/(\d+)', url_or_id)
+    if match:
+        return int(match.group(1))
+    return None
 
 
 # ----------------------------------------------------------------------
@@ -412,10 +425,11 @@ def query_movie_with_user(clean_title, year, client, verbose=False):
                 print(display)
 
             print(f"  {limit + 1}. Buscar con otro título / refinar nombre...")
-            print(f"  {limit + 2}. Omitir esta película")
+            print(f"  {limit + 2}. Introducir URL o ID de TMDb...")
+            print(f"  {limit + 3}. Omitir esta película")
 
             try:
-                choice = input(f"Selecciona una opción (1-{limit + 2}) [Defecto: 1]: ").strip()
+                choice = input(f"Selecciona una opción (1-{limit + 3}) [Defecto: 1]: ").strip()
                 if not choice:
                     return results[0]
                 choice_idx = int(choice)
@@ -428,6 +442,18 @@ def query_movie_with_user(clean_title, year, client, verbose=False):
                         search_query = new_query
                         search_year = None  # Reset year for new search term
                     continue
+                elif choice_idx == limit + 2:
+                    user_input = input("Introduce la URL o ID de TMDb: ").strip()
+                    tmdb_id = extract_tmdb_id(user_input)
+                    if tmdb_id:
+                        details = client.get_movie_details(tmdb_id)
+                        if details:
+                            return {"id": tmdb_id, "title": details.get("title", "ID " + str(tmdb_id))}
+                        else:
+                            print(f"[ERROR] No se pudieron obtener detalles para el ID {tmdb_id}.")
+                    else:
+                        print("[ERROR] Formato de URL o ID no válido.")
+                    continue
                 else:
                     return None
             except (ValueError, IndexError):
@@ -435,17 +461,157 @@ def query_movie_with_user(clean_title, year, client, verbose=False):
                 return None
         else:
             print(f"\n[AVISO] No se encontraron resultados para '{search_query}'.")
-            choice = readline_input("¿Quieres refinar el nombre de búsqueda? Edita el título (deja vacío para saltar): ", search_query).strip()
-            if choice:
-                learn_suffix_if_needed(search_query, choice)
-                search_query = choice
-                search_year = None
-                continue
-            else:
+            print("  1. Buscar con otro título / refinar nombre...")
+            print("  2. Introducir URL o ID de TMDb...")
+            print("  3. Omitir esta película")
+            try:
+                choice = input("Selecciona una opción (1-3) [Defecto: 1]: ").strip()
+                if not choice:
+                    choice_idx = 1
+                else:
+                    choice_idx = int(choice)
+                if choice_idx == 1:
+                    choice_refine = readline_input("Introduce el nuevo título de búsqueda: ", search_query).strip()
+                    if choice_refine:
+                        learn_suffix_if_needed(search_query, choice_refine)
+                        search_query = choice_refine
+                        search_year = None
+                    continue
+                elif choice_idx == 2:
+                    user_input = input("Introduce la URL o ID de TMDb: ").strip()
+                    tmdb_id = extract_tmdb_id(user_input)
+                    if tmdb_id:
+                        details = client.get_movie_details(tmdb_id)
+                        if details:
+                            return {"id": tmdb_id, "title": details.get("title", "ID " + str(tmdb_id))}
+                        else:
+                            print(f"[ERROR] No se pudieron obtener detalles para el ID {tmdb_id}.")
+                    else:
+                        print("[ERROR] Formato de URL o ID no válido.")
+                    continue
+                else:
+                    return None
+            except (ValueError, IndexError):
+                print("Opción no válida. Omitiendo película.")
                 return None
 
 
-def process_video_file(filepath, client, force=False, interactive=False, verbose=False):
+def get_vsmeta_title_year(vsmeta_path):
+    """
+    Decodes an existing .vsmeta file and extracts the title and release year.
+    """
+    try:
+        decoder = VsMetaDecoder()
+        decoder.readVsMetaFile(vsmeta_path)
+        decoder.decode()
+        return decoder.info.showTitle, decoder.info.year
+    except Exception:
+        return None, None
+
+
+def normalize_filename_if_needed(filepath, title, year, interactive=False, verbose=False):
+    """
+    Checks if the video filename matches the normalized title (and optional year).
+    If not, renames the video file and all associated files (subtitles, .vsmeta, etc.).
+    Returns the new filepath (which might be the same if no renaming occurred).
+    """
+    if not title:
+        return filepath
+
+    # 1. Normalize the title for the filesystem (remove characters that might cause issues in SMB/Windows)
+    cleaned_title = re.sub(r'[\\/:*?"<>|]', " ", title)
+    cleaned_title = " ".join(cleaned_title.split()).strip()
+
+    # Append year if present
+    if year:
+        # Check if year is already in the title to avoid "Title (Year) (Year)"
+        if not re.search(r'\b' + re.escape(str(year)) + r'\b', cleaned_title):
+            new_base_no_ext = f"{cleaned_title} ({year})"
+        else:
+            new_base_no_ext = cleaned_title
+    else:
+        new_base_no_ext = cleaned_title
+
+    old_dir = os.path.dirname(filepath)
+    old_basename = os.path.basename(filepath)
+    old_base, ext = os.path.splitext(old_basename)
+    
+    new_basename = new_base_no_ext + ext
+
+    # If already matches (case-insensitive), nothing to do
+    if old_base.lower() == new_base_no_ext.lower():
+        if verbose:
+            print(f"  [NORMALIZACIÓN] El nombre '{old_basename}' ya está normalizado.")
+        return filepath
+
+    # 2. Check for name collisions
+    target_filepath = os.path.join(old_dir, new_basename)
+    if os.path.exists(target_filepath) and target_filepath.lower() != filepath.lower():
+        print(f"  [AVISO] No se normalizó el nombre del archivo para evitar colisión con uno existente:")
+        print(f"    Existente: '{new_basename}'")
+        print(f"    Conservado original: '{old_basename}'")
+        return filepath
+
+    # 3. Find associated files (subtitles, existing vsmeta, etc.)
+    associated_to_rename = []
+    if os.path.exists(old_dir):
+        for item in os.listdir(old_dir):
+            if item == old_basename:
+                continue
+            item_path = os.path.join(old_dir, item)
+            if os.path.isfile(item_path):
+                if item.startswith(old_base):
+                    rest = item[len(old_base):]
+                    if not rest or rest[0] in ('.', '_', '-', ' '):
+                        associated_to_rename.append(item_path)
+
+    # 4. Ask for user confirmation if interactive mode is on
+    if interactive:
+        print(f"\n[NORMALIZACIÓN] Se propone renombrar el video y sus archivos asociados:")
+        print(f"  Origen:  '{old_basename}'")
+        print(f"  Destino: '{new_basename}'")
+        if associated_to_rename:
+            print(f"  Archivos asociados a renombrar ({len(associated_to_rename)}):")
+            for assoc in associated_to_rename:
+                print(f"    - '{os.path.basename(assoc)}' -> '{new_base_no_ext}{os.path.basename(assoc)[len(old_base):]}'")
+        
+        choice = input("¿Confirmas el cambio de nombre? (s/n) [Defecto: s]: ").strip().lower()
+        if choice == 'n':
+            print("  [INFO] Renombrado omitido por el usuario.")
+            return filepath
+
+    # 5. Perform the renaming
+    print(f"  [RENOMBRANDO] Normalizando nombre de archivo:")
+    print(f"    Origen: '{old_basename}'")
+    print(f"    Destino: '{new_basename}'")
+    try:
+        # Rename the main video file
+        os.rename(filepath, target_filepath)
+        
+        # Rename associated files
+        for assoc_path in associated_to_rename:
+            assoc_basename = os.path.basename(assoc_path)
+            assoc_ext_part = assoc_basename[len(old_base):]
+            new_assoc_name = new_base_no_ext + assoc_ext_part
+            new_assoc_path = os.path.join(old_dir, new_assoc_name)
+            
+            # Remove target if it already exists to avoid OSError
+            if os.path.exists(new_assoc_path):
+                try:
+                    os.remove(new_assoc_path)
+                except Exception:
+                    pass
+            os.rename(assoc_path, new_assoc_path)
+            if verbose:
+                print(f"    [INFO] Renombrado archivo asociado: '{assoc_basename}' -> '{new_assoc_name}'")
+                
+        return target_filepath
+    except Exception as e:
+        print(f"  [ERROR] Error al renombrar los archivos durante la normalización: {e}")
+        return filepath
+
+
+def process_video_file(filepath, client, force=False, interactive=False, verbose=False, normalize=False):
     """
     Deduces movie info, fetches metadata from TMDb, downloads images,
     and encodes the .vsmeta file next to the video file.
@@ -460,10 +626,20 @@ def process_video_file(filepath, client, force=False, interactive=False, verbose
 
     vsmeta_path = filepath + ".vsmeta"
 
-    # Skip if exists and force is False
-    if os.path.exists(vsmeta_path) and not force:
+    # Skip if exists, is valid, and force is False
+    if os.path.exists(vsmeta_path) and not force and not is_vsmeta_invalid(vsmeta_path):
+        if normalize:
+            title, year = get_vsmeta_title_year(vsmeta_path)
+            new_filepath = normalize_filename_if_needed(filepath, title, year, interactive, verbose)
+            if new_filepath != filepath:
+                # Touch the new video file to trigger reindexing
+                try:
+                    os.utime(new_filepath, None)
+                except Exception:
+                    pass
+                return "success"
         if verbose:
-            print(f"[INFO] Saltando: '{filepath}' (el archivo .vsmeta ya existe)")
+            print(f"[INFO] Saltando: '{filepath}' (el archivo .vsmeta ya existe y es válido)")
         return "skipped"
 
     def cleanup_vsmeta():
@@ -619,11 +795,26 @@ def process_video_file(filepath, client, force=False, interactive=False, verbose
 
     info.episodeMetaJson = meta_json
 
+    # If normalize is requested, normalize the filename using TMDb title/year before writing
+    if normalize:
+        filepath = normalize_filename_if_needed(filepath, info.showTitle, info.year, interactive, verbose)
+        vsmeta_path = filepath + ".vsmeta"
+
     # 7. Write .vsmeta file
     try:
         encoded_data = vsmeta_writer.encode(info)
         vsmeta_writer.writeVsMetaFile(vsmeta_path)
         print(f"  [OK] Creado: {os.path.basename(vsmeta_path)}")
+        
+        # Touch the video file to trigger Synology's media indexer to reload the metadata
+        try:
+            os.utime(filepath, None)
+            if verbose:
+                print(f"  -> Archivo de video tocado para forzar reindexación en Video Station.")
+        except Exception as utime_err:
+            if verbose:
+                print(f"  [AVISO] No se pudo tocar el archivo de video: {utime_err}")
+                
         return "success"
     except Exception as e:
         print(f"  [ERROR] No se pudo escribir el archivo .vsmeta: {e}")
@@ -693,11 +884,15 @@ def main():
         help="Muestra información detallada de la ejecución."
     )
     parser.add_argument(
+        "--normalizar",
+        action="store_true",
+        help="Normaliza el nombre del archivo de video y sus asociados basándose en el título de la película en el vsmeta."
+    )
+    parser.add_argument(
         "--clean-invalid",
         action="store_true",
         help="Solo escanea y elimina archivos .vsmeta inválidos (tamaño <= 1KB o corruptos) y finaliza."
     )
-
     args = parser.parse_args()
 
     # Validate target exists
@@ -815,7 +1010,7 @@ def main():
 
     for video_path in video_files:
         status = process_video_file(
-            video_path, client, force=args.force, interactive=args.interactive, verbose=args.verbose
+            video_path, client, force=args.force, interactive=args.interactive, verbose=args.verbose, normalize=args.normalizar
         )
         if status == "success":
             success_count += 1
