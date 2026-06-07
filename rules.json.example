@@ -1,0 +1,17 @@
+{
+  "rules": [
+    "[720p]",
+    "[1080p]",
+    "[4K]",
+    "[Español]",
+    "[Castellano]",
+    "[wWw.EliteTorrent.BiZ]",
+    "[www.atomixHQ.ONE]"
+  ],
+  "ignored_folders": [
+    "samples",
+    "extras",
+    "trailers",
+    "subtitles"
+  ]
+}

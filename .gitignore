@@ -12,3 +12,5 @@ __pycache__/
 # IDE / Editor configuration
 .vscode/
 failed_files.txt
+# Rules and configuration files
+rules.json
